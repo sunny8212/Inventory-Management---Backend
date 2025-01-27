@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const app = express();
-const port = 3000;
+const port = 8000; 
 
 // Middleware to parse JSON request bodies
 app.use(express.json());
