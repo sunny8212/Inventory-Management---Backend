@@ -28,11 +28,12 @@
     password: { type: String, required: true },
     role: {
       type: String,
-      enum: ["Admin", "Manager", "Viewer"],
-      required: true, // Role is mandatory
-      default: "Viewer", // Only applies if no role is provided
+      enum: ["Admin", "Manager", "Viewer"], // Ensure role is a string from these options
+      required: true,
+      default: "Viewer", // Default role if not provided
     },
   });
+  
 
   const User = mongoose.model("User", userSchema);
   
@@ -118,19 +119,15 @@
     }
   });
 
-  //New Functions here
+  //REGISTER
 
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { name, email, password, role } = req.body;
   
       if (!name || !email || !password || !role) {
-        return res
-          .status(400)
-          .json({ message: "Name, email, password, and role are required." });
+        return res.status(400).json({ message: "Name, email, password, and role are required." });
       }
-  
-      console.log('Role received:', role); // Debugging role
   
       // Check if the email already exists
       const existingUser = await User.findOne({ email });
@@ -150,12 +147,26 @@
       });
   
       await newUser.save(); // Save to MongoDB
-      res.status(201).json({ message: "User registered successfully." });
+  
+      // Generate JWT token
+      const token = jwt.sign(
+        { id: newUser._id, email: newUser.email, role: newUser.role },
+        JWT_SECRET,
+        { expiresIn: "1h" } // Token expires in 1 hour
+      );
+  
+      // Return response with the user and token
+      return res.status(201).json({
+        message: "User registered successfully.",
+        token,
+        user: { id: newUser._id, name: newUser.name, email: newUser.email, role: newUser.role },
+      });
     } catch (error) {
       console.error("Error during registration:", error);
-      res.status(500).json({ message: "Error registering user", error });
+      return res.status(500).json({ message: "Error registering user", error });
     }
   });
+  
   
   
 
@@ -184,7 +195,7 @@
       }
       next();
     };
-  };
+  };  
 
 
   // User Login (POST)
@@ -225,8 +236,6 @@
     }
   });
   
-
-
 
   // Protected Route (Example)
   app.get("/api/protected", async (req, res) => {
