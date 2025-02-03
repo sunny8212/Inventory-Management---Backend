@@ -34,9 +34,7 @@
     },
   });
   
-
   const User = mongoose.model("User", userSchema);
-  
 
   // Create a new user (POST)
   app.post("/api/users", async (req, res) => {
@@ -277,3 +275,75 @@
   app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
   });
+
+
+  // Add a new product (POST)
+ 
+
+
+// Connect to MongoDB
+mongoose.connect("mongodb://localhost:27017/Inventory", {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+
+// Product Schema
+const productSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  sku: { type: String, required: true, unique: true },
+  category: { type: String, required: true },
+  quantity: { type: Number, required: true },
+  price: { type: Number, required: true },
+  supplier: { type: String, required: true },
+  status: { type: String, enum: ["active", "inactive"], default: "active" },
+});
+
+const Product = mongoose.model("Product", productSchema);
+
+// Add Product API
+app.post("/api/products", async (req, res) => {
+  try {
+    const { name, sku, category, quantity, price, supplier, status } = req.body;
+
+    // Ensure all fields are present
+    if (!name || !sku || !category || !quantity || !price || !supplier) {
+      return res.status(400).json({ message: "All fields are required." });
+    }
+
+    const newProduct = new Product({ name, sku, category, quantity, price, supplier, status });
+    await newProduct.save();
+    res.status(201).json({ message: "Product added successfully", product: newProduct });
+  } catch (error) {
+    console.error("Error adding product:", error);
+    res.status(500).json({ message: "Internal Server Error", error: error.message });
+  }
+});
+
+// Get All Products
+app.get("/api/products", async (req, res) => {
+  try {
+    const products = await Product.find();
+    res.json(products);
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    res.status(500).json({ message: "Error fetching products", error: error.message });
+  }
+});
+
+
+app.delete("/api/products/:id", async (req, res) => {
+  try {
+    console.log("Received delete request for ID:", req.params.id); // ✅ Log received ID
+
+    const deletedProduct = await Product.findByIdAndDelete(req.params.id);
+    
+    if (!deletedProduct) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+    
+    res.json({ message: "Product deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting product:", error);
+    res.status(500).json({ message: "Error deleting product", error: error.message });
+  }
+});
