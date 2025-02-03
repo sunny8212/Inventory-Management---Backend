@@ -5,10 +5,10 @@
   const app = express();
   const port = 8000; 
   const cors = require('cors');
-
   // Middleware to parse JSON request bodies
   app.use(express.json());
   app.use(cors());
+  const Product = mongoose.model("Product", productSchema);
 
   // Connect to MongoDB
   mongoose
@@ -276,11 +276,6 @@
     console.log(`Server running at http://localhost:${port}`);
   });
 
-
-  // Add a new product (POST)
- 
-
-
 // Connect to MongoDB
 mongoose.connect("mongodb://localhost:27017/Inventory", {
   useNewUrlParser: true,
@@ -296,9 +291,13 @@ const productSchema = new mongoose.Schema({
   price: { type: Number, required: true },
   supplier: { type: String, required: true },
   status: { type: String, enum: ["active", "inactive"], default: "active" },
-});
+  restocked: { type: Number, default: 0 }, // Track restocks
+  sold: { type: Number, default: 0 }, // Track sales
+  },
+  { timestamps: true } 
+);
 
-const Product = mongoose.model("Product", productSchema);
+
 
 // Add Product API
 app.post("/api/products", async (req, res) => {
@@ -388,5 +387,59 @@ app.put("/api/product/:id", async (req, res) => {
   } catch (error) {
     console.error("Error updating product:", error);
     res.status(500).json({ message: "Error updating product", error: error.message });
+  }
+});
+
+// Get stock levels by category
+app.get("/api/stock-by-category", async (req, res) => {
+  try {
+    const stockLevels = await Product.aggregate([
+      {
+        $group: {
+          _id: "$category",
+          totalStock: { $sum: "$quantity" },
+        },
+      },
+      {
+        $sort: { totalStock: -1 },
+      },
+    ]);
+
+    res.json(stockLevels);
+  } catch (error) {
+    console.error("Error fetching stock by category:", error);
+    res.status(500).json({ message: "Error fetching stock levels" });
+  }
+});
+
+// 📌 Get Monthly Stock Updates (Restocks & Sales)
+app.get("/api/monthly-stock-updates", async (req, res) => {
+  try {
+    const stockUpdates = await Product.aggregate([
+      {
+        $group: {
+          _id: {
+            month: { $month: "$updatedAt" }, // Ensure `updatedAt` exists
+            year: { $year: "$updatedAt" },
+          },
+          restocked: { $sum: "$restocked" },
+          sold: { $sum: "$sold" },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
+    ]);
+
+    const formattedStockUpdates = stockUpdates.map((entry) => ({
+      month: new Date(0, entry._id.month - 1).toLocaleString("en", {
+        month: "long",
+      }),
+      restocked: entry.restocked || 0,
+      sold: entry.sold || 0,
+    }));
+
+    res.status(200).json(formattedStockUpdates);
+  } catch (error) {
+    console.error("Error fetching monthly stock updates:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
