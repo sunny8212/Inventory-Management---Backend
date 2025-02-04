@@ -17,7 +17,7 @@
 
   // Connect to MongoDB
   mongoose
-    .connect("mongodb://localhost:27017/Inventory", {
+    .connect("mongodb+srv://padariyasunny:NJUdakluqHXMtejz@yt.1qrya.mongodb.net/Inventory", {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     })
@@ -282,7 +282,7 @@
   });
 
 // Connect to MongoDB
-mongoose.connect("mongodb://localhost:27017/Inventory", {
+mongoose.connect("mongodb+srv://padariyasunny:NJUdakluqHXMtejz@yt.1qrya.mongodb.net/Inventory", {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
