@@ -5,10 +5,15 @@
   const app = express();
   const port = 8000; 
   const cors = require('cors');
+  const fs = require("fs");
+  const path = require("path");
+  const { Parser } = require("json2csv");
+
+
   // Middleware to parse JSON request bodies
   app.use(express.json());
   app.use(cors());
-  const Product = mongoose.model("Product", productSchema);
+
 
   // Connect to MongoDB
   mongoose
@@ -296,7 +301,7 @@ const productSchema = new mongoose.Schema({
   },
   { timestamps: true } 
 );
-
+const Product = mongoose.model("Product", productSchema);
 
 
 // Add Product API
@@ -365,25 +370,44 @@ app.delete("/api/products/:id", async (req, res) => {
 
 
 
-// Edit the product details
+
+// Edit the product details - Adjust quantity dynamically
 app.put("/api/product/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, sku, category, quantity, price, supplier, status } = req.body;
+    const { name, sku, category, price, supplier, status, restocked, sold } = req.body;
 
-    const updatedProduct = await Product.findByIdAndUpdate(id, {
-      name,
-      sku,
-      category,
-      quantity,
-      price,
-      supplier,
-      status,
-    });
-    if (!updatedProduct) {
+    // Find the existing product
+    const existingProduct = await Product.findById(id);
+    if (!existingProduct) {
       return res.status(404).json({ message: "Product not found" });
     }
-    res.json({ message: "Product updated successfully" });
+
+    // Ensure restocked and sold values are numbers
+    const restockedAmount = Number(restocked) || 0;
+    const soldAmount = Number(sold) || 0;
+
+    // Calculate new quantity
+    let newQuantity = existingProduct.quantity + restockedAmount - soldAmount;
+    if (newQuantity < 0) {
+      return res.status(400).json({ message: "Error: Quantity cannot be negative!" });
+    }
+
+    // Update the fields while adjusting quantity
+    existingProduct.name = name;
+    existingProduct.sku = sku;
+    existingProduct.category = category;
+    existingProduct.quantity = newQuantity;
+    existingProduct.price = price;
+    existingProduct.supplier = supplier;
+    existingProduct.status = status;
+    existingProduct.restocked += restockedAmount;
+    existingProduct.sold += soldAmount;
+
+    // Save updated product
+    const updatedProduct = await existingProduct.save();
+
+    res.json({ message: "Product updated successfully", product: updatedProduct });
   } catch (error) {
     console.error("Error updating product:", error);
     res.status(500).json({ message: "Error updating product", error: error.message });
@@ -412,14 +436,52 @@ app.get("/api/stock-by-category", async (req, res) => {
   }
 });
 
-// 📌 Get Monthly Stock Updates (Restocks & Sales)
-app.get("/api/monthly-stock-updates", async (req, res) => {
+//  Get Product-Wise Monthly Stock Updates
+app.get("/api/product-monthly-stock-updates", async (req, res) => {
+  try {
+    const stockUpdates = await Product.aggregate([
+      {
+        $unwind: "$updatedAt", // Ensure updates are tracked
+      },
+      {
+        $group: {
+          _id: {
+            product: "$name",
+            month: { $month: "$updatedAt" }, // Extract month
+            year: { $year: "$updatedAt" }, // Extract year
+          },
+          restocked: { $sum: "$restocked" }, // Sum of restocked
+          sold: { $sum: "$sold" }, // Sum of sold
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
+    ]);
+
+    const formattedStockUpdates = stockUpdates.map((entry) => ({
+      product: entry._id.product,
+      month: new Date(0, entry._id.month - 1).toLocaleString("en", {
+        month: "long",
+      }),
+      restocked: entry.restocked || 0,
+      sold: entry.sold || 0,
+    }));
+
+    res.status(200).json(formattedStockUpdates);
+  } catch (error) {
+    console.error("Error fetching product-wise monthly stock updates:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Export Product-Wise Monthly Stock Updates as CSV
+app.get("/api/export-product-monthly-stock", async (req, res) => {
   try {
     const stockUpdates = await Product.aggregate([
       {
         $group: {
           _id: {
-            month: { $month: "$updatedAt" }, // Ensure `updatedAt` exists
+            product: "$name",
+            month: { $month: "$updatedAt" },
             year: { $year: "$updatedAt" },
           },
           restocked: { $sum: "$restocked" },
@@ -430,16 +492,25 @@ app.get("/api/monthly-stock-updates", async (req, res) => {
     ]);
 
     const formattedStockUpdates = stockUpdates.map((entry) => ({
+      product: entry._id.product,
       month: new Date(0, entry._id.month - 1).toLocaleString("en", {
         month: "long",
       }),
+      year: entry._id.year,
       restocked: entry.restocked || 0,
       sold: entry.sold || 0,
     }));
 
-    res.status(200).json(formattedStockUpdates);
+    // Convert JSON data to CSV format
+    const json2csvParser = new Parser({ fields: ["product", "month", "year", "restocked", "sold"] });
+    const csvData = json2csvParser.parse(formattedStockUpdates);
+
+    // Send CSV file as response
+    res.setHeader("Content-Disposition", "attachment; filename=product_monthly_stock.csv");
+    res.set("Content-Type", "text/csv");
+    res.status(200).send(csvData);
   } catch (error) {
-    console.error("Error fetching monthly stock updates:", error);
+    console.error("Error exporting product stock CSV:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
